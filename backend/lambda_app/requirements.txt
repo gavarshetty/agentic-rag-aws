@@ -1,0 +1,19 @@
+# --- Core AWS SDK ---
+boto3
+botocore
+
+# --- Data Structures / Models ---
+pydantic
+pydantic[email]
+
+# --- HTTP Requests for external tools (e.g., Web Search API) ---
+requests
+
+# --- Observability, Logging, Tracing ---
+aws-lambda-powertools
+
+# --- Optional Retry Logic (Used in Production Best Practices) ---
+tenacity
+
+# --- Utilities / Helpers ---
+python-dotenv
