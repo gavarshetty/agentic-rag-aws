@@ -19,7 +19,7 @@ class RAGRequest(BaseModel):
         None,
         description="Optional model ID to use. Defaults to Claude 3 Haiku if not specified",
     )
-    max_results: Optional[int] = Field(
+    max_results: int = Field(
         5, description="Maximum number of retrieval results to use", ge=1, le=10
     )
 
