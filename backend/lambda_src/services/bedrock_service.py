@@ -3,7 +3,8 @@
 import json
 import boto3
 from typing import List, Dict, Any, Optional
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from botocore.exceptions import ClientError
 
 from ..utils.logger import get_logger
 from ..utils.exceptions import BedrockServiceError, KnowledgeBaseError
@@ -31,27 +32,34 @@ class BedrockService:
         self.knowledge_base_id = config.KNOWLEDGE_BASE_ID
         self.s3_data_source_id = config.S3_DATA_SOURCE_ID
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(ClientError),
+        before_sleep=lambda retry_state: logger.warning(
+            f"Retrying Bedrock retrieval (attempt {retry_state.attempt_number})"
+        )
+    )
     def retrieve(
         self, query: str, max_results: int = 5, next_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Retrieve relevant chunks from the knowledge base.
-        
+
         Args:
             query: The search query
             max_results: Maximum number of results to return (1-10)
             next_token: Optional pagination token
-            
+
         Returns:
             Dict containing Bedrock retrieval response with 'retrievalResults' key
-            
+
         Raises:
             KnowledgeBaseError: If retrieval fails
         """
         try:
             logger.info(f"Retrieving from knowledge base: {self.knowledge_base_id}")
-            
+
             params = {
                 "knowledgeBaseId": self.knowledge_base_id,
                 "retrievalQuery": {
@@ -63,17 +71,46 @@ class BedrockService:
                     }
                 },
             }
-            
+
             if next_token:
                 params["nextToken"] = next_token
-            
+
             response = self.bedrock_agent_runtime.retrieve(**params)
-            
+
             logger.info(f"Retrieved {len(response.get('retrievalResults', []))} results")
-            
+
             return response
-            
+
+        except ClientError as e:
+            # Check if it's a transient error worth retrying
+            error_code = e.response.get('Error', {}).get('Code', '')
+
+            # Transient errors that should be retried
+            transient_errors = [
+                'ThrottlingException',
+                'InternalServerException',
+                'ServiceUnavailableException',
+                'LimitExceededException'
+            ]
+
+            if error_code in transient_errors:
+                # Let tenacity handle the retry
+                logger.warning(f"Transient error {error_code}, will retry: {str(e)}")
+                raise e
+            else:
+                # Permanent error - don't retry
+                logger.error(f"Permanent error {error_code}, not retrying: {str(e)}")
+                raise KnowledgeBaseError(
+                    f"Bedrock API error: {str(e)}",
+                    {
+                        "error_code": error_code,
+                        "query": query,
+                        "knowledge_base_id": self.knowledge_base_id
+                    }
+                )
+
         except Exception as e:
+            # Non-ClientError exceptions (network, etc.) - don't retry
             error_msg = f"Failed to retrieve from knowledge base: {str(e)}"
             logger.error(error_msg, exc_info=True)
             raise KnowledgeBaseError(error_msg, {"query": query, "knowledge_base_id": self.knowledge_base_id})
@@ -231,10 +268,14 @@ class BedrockService:
         Get the status of an ingestion job.
         
         Args:
-            ingestion_job_id: The ingestion job ID
-            
+            ingestion_job_id: The unique identifier of the ingestion job.
+            data_source_id: Optional data source ID associated with the ingestion job. If not provided, uses the default configured data source.
+
         Returns:
-            Dict with ingestion job status information
+            Dict containing detailed ingestion job status and metadata as returned by AWS Bedrock.
+
+        Raises:
+            KnowledgeBaseError: If the status retrieval fails or an exception is encountered.
         """
         try:
             if not data_source_id:
