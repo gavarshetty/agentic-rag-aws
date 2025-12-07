@@ -13,6 +13,7 @@ class Config:
     # Knowledge Base Configuration
     KNOWLEDGE_BASE_ID: str
     S3_BUCKET_NAME: str
+    DATA_SOURCE_ID: str
     
     # Model Configuration
     DEFAULT_MODEL_ID: str = "anthropic.claude-3-haiku-20240307-v1:0"
@@ -26,7 +27,7 @@ class Config:
         # Required environment variables
         self.KNOWLEDGE_BASE_ID = self._get_env_var("KNOWLEDGE_BASE_ID", required=True)
         self.S3_BUCKET_NAME = self._get_env_var("S3_BUCKET_NAME", required=True)
-        
+        self.S3_DATA_SOURCE_ID = self._get_env_var("S3_DATA_SOURCE_ID", required=True)
         
         # AWS Region (required for Bedrock operations)
         self.AWS_REGION = self._get_env_var("AWS_REGION", default=self._get_aws_region(), required=True)

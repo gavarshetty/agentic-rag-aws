@@ -119,6 +119,19 @@ export class AgenticRagStack extends cdk.Stack {
       },
     });
 
+    // Data source definition connecting the S3 documents/ folder to the Bedrock knowledge base
+    const dataSource = new bedrock.CfnDataSource(this, 'DocumentDataSource', {
+      knowledgeBaseId: knowledgeBase.attrKnowledgeBaseId,
+      name: 'agintic-rag-s3-data-source',
+      dataSourceConfiguration: {
+        type: 'S3',
+        s3Configuration: {
+          bucketArn: knowledgeBaseBucket.bucketArn,
+          inclusionPrefixes: ['documents/']  // Only files in documents/ folder
+        }
+      }
+    });
+    
     
     // ========================================
     // LAMBDA FUNCTIONS
@@ -208,14 +221,15 @@ export class AgenticRagStack extends cdk.Stack {
     const ingestLambda = new lambda.Function(this, 'AgenticRagIngestLambda', {
       functionName: 'agentic-rag-ingest-function',
       runtime: lambda.Runtime.PYTHON_3_12,
-      code: lambda.Code.fromAsset('../backend/lambda_app'), // Assuming lambda code is in backend/lambda_app
-      handler: 'handlers.ingest.handler', // This will need to be created
+      code: lambda.Code.fromAsset('../backend/lambda_src'),
+      handler: 'handlers.knowledge_base_handler.handler',
       role: ingestLambdaRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 2048,
       environment: {
         KNOWLEDGE_BASE_ID: knowledgeBase.attrKnowledgeBaseId,
         S3_BUCKET_NAME: knowledgeBaseBucket.bucketName,
+        S3_DATA_SOURCE_ID: dataSource.attrDataSourceId,
       },
     });
 
@@ -223,8 +237,8 @@ export class AgenticRagStack extends cdk.Stack {
     const ragLambda = new lambda.Function(this, 'AgenticRagLambda', {
       functionName: 'agentic-rag-function',
       runtime: lambda.Runtime.PYTHON_3_12,
-      code: lambda.Code.fromAsset('../backend/lambda_app'), // Assuming lambda code is in backend/lambda_app
-      handler: 'handlers.rag.handler', // This will need to be created
+      code: lambda.Code.fromAsset('../backend/lambda_src'),
+      handler: 'handlers.rag_handler.handler',
       role: ragLambdaRole,
       timeout: cdk.Duration.minutes(10),
       memorySize: 2048,
