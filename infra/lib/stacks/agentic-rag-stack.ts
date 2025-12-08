@@ -8,6 +8,7 @@ import * as bedrock from 'aws-cdk-lib/aws-bedrock';
 import * as opensearchserverless from 'aws-cdk-lib/aws-opensearchserverless';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigatewayv2_integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 
 /**
  * The AgenticRagStack creates all necessary AWS resources for the Agentic RAG application:
@@ -132,6 +133,28 @@ export class AgenticRagStack extends cdk.Stack {
       }
     });
     
+    // ========================================
+    // DYNAMODB TABLE FOR CONVERSATIONS
+    // ========================================
+    // DynamoDB table to persist conversation history across Lambda invocations
+    // Schema: One record per message with composite key (conversation_id + message_id)
+    const conversationsTable = new dynamodb.Table(this, 'AgenticRagConversationsTable', {
+      tableName: 'agentic-rag-conversations',
+      partitionKey: { name: 'conversation_id', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'message_id', type: dynamodb.AttributeType.NUMBER }, // Epoch timestamp in microseconds
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // For dev/test, use RETAIN in production
+      pointInTimeRecovery: false, // Enable for production if needed
+      timeToLiveAttribute: 'ttl', // Auto-delete messages after 1 day (TTL updated on each message)
+    });
+
+    // Add GSI for querying by creation time if needed (optional)
+    // conversationsTable.addGlobalSecondaryIndex({
+    //   indexName: 'created-at-index',
+    //   partitionKey: { name: 'created_at_date', type: dynamodb.AttributeType.STRING },
+    //   sortKey: { name: 'created_at', type: dynamodb.AttributeType.STRING },
+    // });
+    
     
     // ========================================
     // LAMBDA FUNCTIONS
@@ -215,6 +238,20 @@ export class AgenticRagStack extends cdk.Stack {
       ],
     }));
 
+    // Policy allowing Lambda to read and write conversation history in DynamoDB
+    ragLambdaRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'dynamodb:GetItem',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:Query',
+      ],
+      resources: [
+        conversationsTable.tableArn,
+      ],
+    }));
+
     
 
     // Lambda function triggered by S3 uploads to process documents and update knowledge base
@@ -245,6 +282,7 @@ export class AgenticRagStack extends cdk.Stack {
       environment: {
         KNOWLEDGE_BASE_ID: knowledgeBase.attrKnowledgeBaseId,
         S3_BUCKET_NAME: knowledgeBaseBucket.bucketName,
+        CONVERSATIONS_TABLE_NAME: conversationsTable.tableName,
       },
     });
 
