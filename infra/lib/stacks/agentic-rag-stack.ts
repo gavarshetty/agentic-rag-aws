@@ -9,6 +9,7 @@ import * as opensearchserverless from 'aws-cdk-lib/aws-opensearchserverless';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigatewayv2_integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 /**
  * The AgenticRagStack creates all necessary AWS resources for the Agentic RAG application:
@@ -254,6 +255,15 @@ export class AgenticRagStack extends cdk.Stack {
 
     
 
+    // Dead Letter Queue for failed ingestion Lambda invocations
+    // Captures events that fail after all retry attempts (3 total attempts)
+    const ingestLambdaDLQ = new sqs.Queue(this, 'AgenticRagIngestLambdaDLQ', {
+      queueName: 'agentic-rag-ingest-dlq',
+      retentionPeriod: cdk.Duration.days(14), // Keep failed events for 14 days
+      visibilityTimeout: cdk.Duration.minutes(15), // Match Lambda timeout
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     // Lambda function triggered by S3 uploads to process documents and update knowledge base
     const ingestLambda = new lambda.Function(this, 'AgenticRagIngestLambda', {
       functionName: 'agentic-rag-ingest-function',
@@ -263,6 +273,7 @@ export class AgenticRagStack extends cdk.Stack {
       role: ingestLambdaRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 2048,
+      deadLetterQueue: ingestLambdaDLQ, // Capture failed events after all retries
       environment: {
         KNOWLEDGE_BASE_ID: knowledgeBase.attrKnowledgeBaseId,
         S3_BUCKET_NAME: knowledgeBaseBucket.bucketName,
@@ -358,6 +369,12 @@ export class AgenticRagStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'IngestLambdaArn', {
       value: ingestLambda.functionArn,
       description: 'Document ingest Lambda function ARN',
+    });
+
+    // Dead Letter Queue URL for failed ingestion events
+    new cdk.CfnOutput(this, 'IngestLambdaDLQUrl', {
+      value: ingestLambdaDLQ.queueUrl,
+      description: 'Dead Letter Queue URL for failed ingestion Lambda invocations',
     });
 
     // ARN of the Lambda function that handles RAG queries
