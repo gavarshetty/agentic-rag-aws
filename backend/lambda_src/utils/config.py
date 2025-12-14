@@ -24,7 +24,6 @@ class Config:
     
     # AWS Region
     AWS_REGION: str
-    AWS_DEFAULT_REGION: str = "us-east-1"
     
     def __init__(self):
         """Initialize configuration from environment variables."""
@@ -70,9 +69,19 @@ class Config:
             AWS region string
         """
         # Try environment variable first
-        region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+        region = os.getenv("AWS_REGION") 
+
+        if region:
+            return region
         
-        return region
+        # Try to get from boto3 session
+        try:
+            import boto3
+            session = boto3.Session()
+            return session.region_name or "us-east-1"
+        except Exception:
+            # Fallback to default
+            return "us-east-1"
         
     
     def get_model_arn(self, model_id: Optional[str] = None) -> str:

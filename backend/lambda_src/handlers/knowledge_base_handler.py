@@ -43,42 +43,43 @@ def handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, Any]:
         
         bedrock_service = BedrockService()
         
-        # Process each S3 record
-        results = []
+        # Collect all S3 objects that triggered this event
+        s3_objects = []
         for record in s3_records:
             bucket_name = record["s3"]["bucket"]["name"]
             object_key = record["s3"]["object"]["key"]
-            
-            request_logger.info(
-                f"Processing S3 upload: s3://{bucket_name}/{object_key}"
-            )
-            
-            # Start ingestion job
-            # If this fails, exception will bubble up and fail the Lambda (allowing S3 retry)
-            response = bedrock_service.start_ingestion_job()
-            ingestion_job = response.get("ingestionJob", {})
-            job_id = ingestion_job.get("ingestionJobId")
-            status = ingestion_job.get("status")
-            
-            results.append({
+            s3_objects.append({
                 "bucket": bucket_name,
                 "key": object_key,
-                "ingestion_job_id": job_id,
-                "status": status,
-                "success": True,
             })
-            
             request_logger.info(
-                f"Started ingestion job {job_id} for {object_key} "
-                f"(status: {status})"
+                f"Detected S3 upload: s3://{bucket_name}/{object_key}"
             )
         
-        # Return success response
+        # Start ingestion job once for the entire data source
+        # (Bedrock processes all files in the data source incrementally, not individual files)
+        request_logger.info(
+            f"Starting ingestion job for {len(s3_objects)} uploaded file(s)"
+        )
+        response = bedrock_service.start_ingestion_job()
+        ingestion_job = response.get("ingestionJob", {})
+        job_id = ingestion_job.get("ingestionJobId")
+        status = ingestion_job.get("status")
+        
+        request_logger.info(
+            f"Started ingestion job {job_id} (status: {status}) "
+            f"for {len(s3_objects)} file(s)"
+        )
+        
+        # Return success response with all processed files
         return {
             "statusCode": 200,
             "body": json.dumps({
-                "message": "Ingestion jobs processed",
-                "results": results,
+                "message": "Ingestion job started",
+                "ingestion_job_id": job_id,
+                "status": status,
+                "files_triggered": s3_objects,
+                "files_count": len(s3_objects),
             }),
         }
         
@@ -95,6 +96,5 @@ def handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, Any]:
         # Log and re-raise to fail Lambda (allows S3 to retry)
         request_logger.error(f"Unexpected error in knowledge base handler: {str(e)}", exc_info=True)
         raise
-
 
 
