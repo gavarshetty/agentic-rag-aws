@@ -19,7 +19,7 @@ class Config:
     CONVERSATIONS_TABLE_NAME: str
     
     # Model Configuration
-    DEFAULT_MODEL_ID: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    DEFAULT_MODEL_ID: str = "anthropic.claude-sonnet-4-5-20250514-v1:0"
     MAX_RETRIEVAL_RESULTS: int = 5  # Maximum number of retrieval results (1-10)
     
     # AWS Region

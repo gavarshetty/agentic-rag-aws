@@ -121,16 +121,16 @@ class BedrockService:
         model_id: str,
         messages: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
+        temperature: float = 0.1,
+        max_tokens: int = 4096,
     ) -> str:
         """
-        Invoke a Bedrock foundation model directly.
+        Invoke a Claude model via Bedrock.
         
         Args:
-            model_id: The model ID (e.g., "anthropic.claude-3-haiku-20240307-v1:0")
+            model_id: The Claude model ID (e.g., "anthropic.claude-sonnet-4-5-20250514-v1:0")
             messages: List of message dicts with 'role' and 'content'
-            system_prompt: Optional system prompt (Claude-style)
+            system_prompt: Optional system prompt
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
             
@@ -138,21 +138,19 @@ class BedrockService:
             Generated response text
             
         Raises:
-            BedrockServiceError: If model invocation fails
+            BedrockServiceError: If model invocation fails or model is not Claude
         """
         try:
-            # Determine model provider
-            if "claude" in model_id.lower():
-                return self._invoke_claude(
-                    model_id, messages, system_prompt, temperature, max_tokens
-                )
-            elif "llama" in model_id.lower():
-                return self._invoke_llama(model_id, messages, temperature, max_tokens)
-            else:
+            # Validate Claude model
+            if "claude" not in model_id.lower():
                 raise BedrockServiceError(
-                    f"Unsupported model: {model_id}",
-                    {"model_id": model_id},
+                    f"Only Claude models are supported. Provided model: {model_id}",
+                    {"model_id": model_id, "supported_models": ["anthropic.claude-sonnet-4-5-20250514-v1:0", "anthropic.claude-haiku-4-5-20250514-v1:0"]}
                 )
+            
+            return self._invoke_claude(
+                model_id, messages, system_prompt, temperature, max_tokens
+            )
                 
         except BedrockServiceError:
             raise
@@ -195,31 +193,6 @@ class BedrockService:
         
         response_body = json.loads(response["body"].read())
         return response_body["content"][0]["text"]
-
-    def _invoke_llama(
-        self,
-        model_id: str,
-        messages: List[Dict[str, Any]],
-        temperature: float,
-        max_tokens: int,
-    ) -> str:
-        """Invoke Llama model."""
-        body = {
-            # For Llama, "messages" contains general instructions, retrieved context, 
-            # and the whole conversation history, structured as a list of dicts:
-            # [{'role': 'system'/'user'/'assistant', 'content': '...'}, ...].
-            "messages": messages,
-            "temperature": temperature,
-            "max_gen_len": max_tokens,
-        }
-        
-        response = self.bedrock_runtime.invoke_model(
-            modelId=model_id,
-            body=json.dumps(body),
-        )
-        
-        response_body = json.loads(response["body"].read())
-        return response_body["generation"]
 
     def start_ingestion_job(
         self, data_source_id: Optional[str] = None
