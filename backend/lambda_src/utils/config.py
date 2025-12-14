@@ -20,7 +20,7 @@ class Config:
     
     # Model Configuration
     DEFAULT_MODEL_ID: str = "anthropic.claude-3-haiku-20240307-v1:0"
-    FALLBACK_MODEL_ID: str = "meta.llama3-1-8b-instruct-v1:0"
+    MAX_RETRIEVAL_RESULTS: int = 5  # Maximum number of retrieval results (1-10)
     
     # AWS Region
     AWS_REGION: str
